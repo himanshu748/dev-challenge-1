@@ -40,12 +40,12 @@ function App() {
 
   const handleSync = async () => {
     setLoading(l => ({ ...l, sync: true }))
-    showToast('Syncing...', 'Fetching issues & PRs from GitHub', 'info')
+    showToast('Syncing…', 'Fetching issues & PRs from GitHub', 'info')
     try {
       const res = await fetch(`${API}/api/sync`, { method: 'POST' })
       const data = await res.json()
       if (res.ok) {
-        showToast('Sync Complete! ✅', data.message, 'success')
+        showToast('Sync Complete ✅', data.message, 'success')
         fetchData()
       } else {
         showToast('Sync Failed', data.detail || 'Unknown error', 'error')
@@ -58,12 +58,12 @@ function App() {
 
   const handlePlan = async () => {
     setLoading(l => ({ ...l, plan: true }))
-    showToast('Planning...', 'Generating your weekly plan', 'info')
+    showToast('Planning…', 'Generating your weekly plan with AI', 'info')
     try {
       const res = await fetch(`${API}/api/plan`, { method: 'POST' })
       const data = await res.json()
       if (res.ok) {
-        showToast('Plan Ready! 📅', data.message, 'success')
+        showToast('Plan Ready 📅', data.message, 'success')
         setTab('plan')
         fetchData()
       } else {
@@ -77,12 +77,12 @@ function App() {
 
   const handleSetup = async () => {
     setLoading(l => ({ ...l, setup: true }))
-    showToast('Setting Up...', 'Creating Notion databases', 'info')
+    showToast('Setting Up…', 'Creating Notion databases & seeding data', 'info')
     try {
       const res = await fetch(`${API}/api/setup`, { method: 'POST' })
       const data = await res.json()
       if (res.ok) {
-        showToast('Setup Complete! 🎉', data.message, 'success')
+        showToast('Setup Complete 🎉', data.message, 'success')
         fetchData()
       } else {
         showToast('Setup Failed', data.detail || 'Unknown error', 'error')
@@ -99,7 +99,9 @@ function App() {
 
   return (
     <>
-      {/* Header */}
+      <div className="ambient-bg" />
+
+      {/* ─── Header ─── */}
       <header className="header">
         <div className="header-logo">
           <span className="logo-icon">🚀</span>
@@ -112,44 +114,26 @@ function App() {
         <div className="header-actions">
           {!status?.configured?.projects_db && (
             <button className="btn btn-ghost" onClick={handleSetup} disabled={loading.setup}>
-              {loading.setup ? <span className="spinner" /> : '⚡'}
-              Setup
+              {loading.setup ? <span className="spinner" /> : '⚡'} Setup
             </button>
           )}
           <button className="btn btn-primary" onClick={handleSync} disabled={loading.sync}>
-            {loading.sync ? <span className="spinner" /> : '🔄'}
-            Sync from GitHub
+            {loading.sync ? <span className="spinner" /> : '🔄'} Sync from GitHub
           </button>
           <button className="btn btn-success" onClick={handlePlan} disabled={loading.plan}>
-            {loading.plan ? <span className="spinner" /> : '🧠'}
-            Plan my Week
+            {loading.plan ? <span className="spinner" /> : '🧠'} Plan my Week
           </button>
         </div>
       </header>
 
+      {/* ─── Main ─── */}
       <main className="main">
         {/* Stats */}
         <div className="stats-row">
-          <div className="stat-card">
-            <div className="stat-label">Projects</div>
-            <div className="stat-value">{projects.length}</div>
-            <div className="stat-sub">GSoC organizations</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Open Tasks</div>
-            <div className="stat-value">{openTasks.length}</div>
-            <div className="stat-sub">Issues & PRs to work on</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Merged</div>
-            <div className="stat-value">{mergedTasks.length}</div>
-            <div className="stat-sub">Contributions merged</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Available Hours</div>
-            <div className="stat-value">{totalHours}</div>
-            <div className="stat-sub">This week</div>
-          </div>
+          <StatCard icon="📁" label="Projects" value={projects.length} sub="GSoC organizations" />
+          <StatCard icon="🔥" label="Open Tasks" value={openTasks.length} sub="Issues & PRs to work on" />
+          <StatCard icon="✅" label="Merged" value={mergedTasks.length} sub="Contributions merged" />
+          <StatCard icon="⏰" label="Available Hours" value={totalHours} sub="This week" />
         </div>
 
         {/* Tabs */}
@@ -170,12 +154,17 @@ function App() {
           ))}
         </div>
 
-        {/* Tab Content */}
+        {/* Content */}
         {tab === 'projects' && <ProjectsView projects={projects} />}
         {tab === 'tasks' && <TasksView tasks={tasks} />}
         {tab === 'plan' && <PlanView plans={weeklyPlans} />}
         {tab === 'availability' && <AvailabilityView availability={availability} />}
       </main>
+
+      {/* ─── Footer ─── */}
+      <footer className="footer">
+        © 2026 GSOC COMMAND CENTER • Built with Notion MCP + React + FastAPI
+      </footer>
 
       {/* Toast */}
       {toast && (
@@ -188,9 +177,21 @@ function App() {
   )
 }
 
+/* ─── Stat Card ──────────────────────────────── */
+function StatCard({ icon, label, value, sub }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-icon">{icon}</div>
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+      <div className="stat-sub">{sub}</div>
+    </div>
+  )
+}
+
 /* ─── Projects View ──────────────────────────── */
 function ProjectsView({ projects }) {
-  if (!projects.length) return <EmptyState icon="📁" msg="No projects yet. Run Setup first!" />
+  if (!projects.length) return <EmptyState icon="📁" msg="No projects yet. Run Setup to create and seed your Notion databases." />
   return (
     <div className="projects-grid">
       {projects.map(p => (
@@ -206,7 +207,7 @@ function ProjectsView({ projects }) {
             ))}
           </div>
           {p.Repo && (
-            <a href={p.Repo} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--accent-indigo)' }}>
+            <a href={p.Repo} target="_blank" rel="noreferrer" className="project-link">
               View Repository →
             </a>
           )}
@@ -218,7 +219,7 @@ function ProjectsView({ projects }) {
 
 /* ─── Tasks View ──────────────────────────────── */
 function TasksView({ tasks }) {
-  if (!tasks.length) return <EmptyState icon="✅" msg="No tasks synced yet. Click 'Sync from GitHub' to get started!" />
+  if (!tasks.length) return <EmptyState icon="✅" msg="No tasks synced yet. Click 'Sync from GitHub' to pull issues & PRs into Notion." />
   return (
     <div className="card">
       <div className="card-header">
@@ -261,7 +262,7 @@ function TasksView({ tasks }) {
 
 /* ─── Plan View ──────────────────────────────── */
 function PlanView({ plans }) {
-  if (!plans.length) return <EmptyState icon="📅" msg="No weekly plans yet. Click 'Plan my Week' to generate one!" />
+  if (!plans.length) return <EmptyState icon="📅" msg="No weekly plans yet. Click 'Plan my Week' to generate an AI-powered schedule!" />
   const latest = plans[0]
   return (
     <div className="card">
@@ -289,7 +290,7 @@ function AvailabilityView({ availability }) {
             <span className="day-name">{a.Date}</span>
             <span className="day-hours">{a['Available Hours']}h</span>
           </div>
-          {a.Notes && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{a.Notes}</div>}
+          {a.Notes && <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{a.Notes}</div>}
         </div>
       ))}
     </div>
