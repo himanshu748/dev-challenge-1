@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoPM — AI Product Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --border: #1e1e2e;
+    --accent: #6ee7b7;
+    --accent2: #a78bfa;
+    --warn: #fb923c;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --danger: #f87171;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Grid background ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(110,231,183,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(110,231,183,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Orbs ── */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.15;
+  }
+  .orb-1 { width: 600px; height: 600px; background: var(--accent2); top: -200px; left: -100px; }
+  .orb-2 { width: 500px; height: 500px; background: var(--accent); bottom: -150px; right: -100px; }
+
+  /* ── Layout ── */
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 24px;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 64px;
+    animation: fadeDown 0.6s ease both;
+  }
+
+  .logo-badge {
+    width: 48px; height: 48px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+
+  .logo-text h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .logo-text span {
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .status-dot {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+  }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--danger);
+    transition: background 0.3s;
+  }
+  .dot.ok { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  /* ── Hero input ── */
+  .hero {
+    margin-bottom: 48px;
+    animation: fadeUp 0.6s 0.1s ease both;
+  }
+
+  .hero-label {
+    font-size: 0.75rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .idea-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px 24px;
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    font-size: 1.05rem;
+    resize: none;
+    height: 120px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+  }
+  .idea-input:focus {
+    border-color: var(--accent2);
+    box-shadow: 0 0 0 3px rgba(167,139,250,0.12);
+  }
+  .idea-input::placeholder { color: var(--muted); }
+
+  .input-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .page-input {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .page-input:focus { border-color: var(--accent2); }
+  .page-input::placeholder { color: var(--muted); }
+
+  .btn {
+    border: none;
+    border-radius: 10px;
+    padding: 12px 28px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent2), #818cf8);
+    color: white;
+    box-shadow: 0 4px 20px rgba(167,139,250,0.3);
+  }
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-accent {
+    background: linear-gradient(135deg, var(--accent), #34d399);
+    color: #0a0a0f;
+    box-shadow: 0 4px 20px rgba(110,231,183,0.2);
+  }
+  .btn-warn {
+    background: linear-gradient(135deg, var(--warn), #f59e0b);
+    color: #0a0a0f;
+  }
+
+  /* ── Action Cards ── */
+  .actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 40px;
+    animation: fadeUp 0.6s 0.2s ease both;
+  }
+
+  .action-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .action-card:hover {
+    border-color: var(--accent2);
+    transform: translateY(-2px);
+  }
+
+  .action-icon { font-size: 1.8rem; margin-bottom: 12px; }
+  .action-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 6px; }
+  .action-desc { font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+
+  /* ── Log / Output ── */
+  .output-section {
+    animation: fadeUp 0.6s 0.3s ease both;
+  }
+
+  .output-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .output-label {
+    font-size: 0.75rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .log {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    min-height: 200px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.8;
+    overflow-y: auto;
+    max-height: 400px;
+  }
+
+  .log-entry { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 4px; }
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-msg.success { color: var(--accent); }
+  .log-msg.error { color: var(--danger); }
+  .log-msg.info { color: var(--text); }
+  .log-msg.warn { color: var(--warn); }
+
+  /* ── Results ── */
+  .results {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .result-chip {
+    background: rgba(110,231,183,0.06);
+    border: 1px solid rgba(110,231,183,0.2);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .result-num {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--accent);
+    display: block;
+  }
+  .result-label {
+    font-size: 0.72rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .notion-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    padding: 10px 18px;
+    background: rgba(110,231,183,0.08);
+    border: 1px solid rgba(110,231,183,0.25);
+    border-radius: 8px;
+    color: var(--accent);
+    text-decoration: none;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    transition: background 0.2s;
+    word-break: break-all;
+  }
+  .notion-link:hover { background: rgba(110,231,183,0.14); }
+
+  /* ── Spinner ── */
+  .spinner {
+    display: none;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  .spinner.active { display: block; }
+
+  /* ── Animations ── */
+  @keyframes fadeDown { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: none; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .thinking { animation: pulse 1.2s ease-in-out infinite; color: var(--accent2); }
+
+  @media (max-width: 600px) {
+    .actions-grid { grid-template-columns: 1fr; }
+    .results { grid-template-columns: repeat(2, 1fr); }
+    header { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div class="logo-badge">🤖</div>
+    <div class="logo-text">
+      <h1>AutoPM</h1>
+      <span>AI Product Manager × Notion MCP</span>
+    </div>
+    <div class="status-dot" id="statusBadge">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">checking...</span>
+    </div>
+  </header>
+
+  <!-- Idea Input -->
+  <div class="hero">
+    <div class="hero-label">⚡ New Product Idea</div>
+    <textarea
+      class="idea-input"
+      id="ideaInput"
+      placeholder="Describe your product idea... e.g. 'A mobile app that helps remote teams track async video updates like Loom but with AI summaries and Notion sync'"
+    ></textarea>
+    <div class="input-row">
+      <input
+        class="page-input"
+        id="pageIdInput"
+        placeholder="Notion Parent Page ID (or set env NOTION_PARENT_PAGE_ID)"
+      />
+      <button class="btn btn-primary" id="generateBtn" onclick="generatePRD()">
+        <span id="generateLabel">🚀 Generate PRD + Tasks</span>
+        <div class="spinner" id="generateSpinner"></div>
+      </button>
+    </div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="actions-grid">
+    <div class="action-card" onclick="runStandup()">
+      <div class="action-icon">📋</div>
+      <div class="action-title">Daily Standup</div>
+      <div class="action-desc">Read task statuses from Notion and auto-write today's standup page with blockers + velocity.</div>
+    </div>
+    <div class="action-card" onclick="planSprint()">
+      <div class="action-icon">🏃</div>
+      <div class="action-title">Plan Next Sprint</div>
+      <div class="action-desc">Pull backlog from Notion, select ~20 story points, and create a sprint plan page automatically.</div>
+    </div>
+  </div>
+
+  <!-- Output Log -->
+  <div class="output-section">
+    <div class="output-header">
+      <div class="output-label">▶ Activity Log</div>
+      <button class="btn btn-secondary" onclick="clearLog()" style="padding:6px 14px;font-size:0.78rem">Clear</button>
+    </div>
+    <div class="log" id="logArea">
+      <div class="log-entry">
+        <span class="log-time">--:--:--</span>
+        <span class="log-msg info">AutoPM ready. Enter a product idea and hit Generate to create your entire PM workspace in Notion.</span>
+      </div>
+    </div>
+    <div class="results" id="resultsArea" style="display:none"></div>
+    <div id="linksArea"></div>
+  </div>
+
+</div>
+
+<script>
+  const API = '';
+  let sprintNum = 1;
+
+  // ── Health check ──────────────────────────────────────────────────────────
+  async function checkHealth() {
+    try {
+      const r = await fetch('/api/health');
+      const d = await r.json();
+      const ok = d.anthropic_key && d.notion_token;
+      document.getElementById('statusDot').className = 'dot' + (ok ? ' ok' : '');
+      document.getElementById('statusText').textContent = ok ? 'connected' : 'missing env vars';
+      if (d.parent_page_id) {
+        document.getElementById('pageIdInput').placeholder = 'Using NOTION_PARENT_PAGE_ID from env ✓';
+      }
+    } catch {
+      document.getElementById('statusText').textContent = 'server offline';
+    }
+  }
+
+  // ── Logging ───────────────────────────────────────────────────────────────
+  function log(msg, type = 'info') {
+    const area = document.getElementById('logArea');
+    const now = new Date().toTimeString().slice(0, 8);
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<span class="log-time">${now}</span><span class="log-msg ${type}">${msg}</span>`;
+    area.appendChild(entry);
+    area.scrollTop = area.scrollHeight;
+  }
+
+  function clearLog() {
+    document.getElementById('logArea').innerHTML = '';
+    document.getElementById('resultsArea').style.display = 'none';
+    document.getElementById('resultsArea').innerHTML = '';
+    document.getElementById('linksArea').innerHTML = '';
+  }
+
+  function setLoading(btnId, spinnerId, labelId, loading, labelText) {
+    document.getElementById(btnId).disabled = loading;
+    document.getElementById(spinnerId).classList.toggle('active', loading);
+    if (labelText) document.getElementById(labelId).textContent = loading ? '...' : labelText;
+  }
+
+  function showLinks(links) {
+    const area = document.getElementById('linksArea');
+    area.innerHTML = links.map(([label, url]) =>
+      url ? `<a class="notion-link" href="${url}" target="_blank">📄 ${label} →</a>` : ''
+    ).join('');
+  }
+
+  function showResults(items) {
+    const area = document.getElementById('resultsArea');
+    area.style.display = 'grid';
+    area.innerHTML = items.map(([num, label]) =>
+      `<div class="result-chip"><span class="result-num">${num}</span><span class="result-label">${label}</span></div>`
+    ).join('');
+  }
+
+  // ── Generate PRD ──────────────────────────────────────────────────────────
+  async function generatePRD() {
+    const idea = document.getElementById('ideaInput').value.trim();
+    const pageId = document.getElementById('pageIdInput').value.trim();
+    if (!idea) { log('⚠ Please enter a product idea first.', 'warn'); return; }
+
+    setLoading('generateBtn', 'generateSpinner', 'generateLabel', true, '🚀 Generate PRD + Tasks');
+    log(`🧠 Analyzing: "${idea.slice(0, 60)}..."`, 'info');
+    log('<span class="thinking">🤖 Claude is building your PRD, task database, and Sprint 1 plan in Notion...</span>', 'info');
+
+    try {
+      const r = await fetch('/api/generate-prd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idea, parent_page_id: pageId || undefined }),
+      });
+      const d = await r.json();
+
+      if (d.status === 'success') {
+        log('✅ PRD created in Notion!', 'success');
+        log('✅ Epics & Tasks database populated!', 'success');
+        log('✅ Sprint 1 plan created!', 'success');
+
+        const s = d.summary || {};
+        showResults([
+          [s.epics ?? '3+', 'Epics'],
+          [s.stories ?? '10+', 'Stories'],
+          [s.tasks ?? '15+', 'Tasks'],
+        ]);
+        showLinks([
+          ['PRD Document', s.prd_url],
+          ['Task Database', s.database_url],
+          ['Sprint 1 Plan', s.sprint_url],
+        ]);
+      } else {
+        log(`❌ Error: ${JSON.stringify(d)}`, 'error');
+      }
+    } catch (e) {
+      log(`❌ Request failed: ${e.message}`, 'error');
+    }
+
+    setLoading('generateBtn', 'generateSpinner', 'generateLabel', false, '🚀 Generate PRD + Tasks');
+  }
+
+  // ── Standup ───────────────────────────────────────────────────────────────
+  async function runStandup() {
+    const pageId = document.getElementById('pageIdInput').value.trim();
+    log('📋 Running standup agent...', 'info');
+    log('<span class="thinking">🤖 Reading tasks from Notion and writing standup page...</span>', 'info');
+
+    try {
+      const r = await fetch('/api/standup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_page_id: pageId || undefined }),
+      });
+      const d = await r.json();
+      if (d.status === 'success') {
+        const s = d.summary || {};
+        log(`✅ Standup created! ${s.in_progress ?? '?'} in-progress, ${s.blockers ?? '0'} blockers`, 'success');
+        showLinks([['Today\'s Standup', s.standup_url]]);
+      } else {
+        log(`❌ ${JSON.stringify(d)}`, 'error');
+      }
+    } catch (e) {
+      log(`❌ ${e.message}`, 'error');
+    }
+  }
+
+  // ── Sprint Planner ────────────────────────────────────────────────────────
+  async function planSprint() {
+    const pageId = document.getElementById('pageIdInput').value.trim();
+    log(`🏃 Planning Sprint ${sprintNum}...`, 'info');
+    log('<span class="thinking">🤖 Pulling backlog from Notion and selecting stories by priority + points...</span>', 'info');
+
+    try {
+      const r = await fetch('/api/plan-sprint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sprint_num: sprintNum, parent_page_id: pageId || undefined }),
+      });
+      const d = await r.json();
+      if (d.status === 'success') {
+        const s = d.summary || {};
+        log(`✅ Sprint ${sprintNum} planned! ${s.task_count ?? '?'} tasks · ${s.total_points ?? '?'} points`, 'success');
+        showLinks([[`Sprint ${sprintNum} Plan`, s.sprint_url]]);
+        sprintNum++;
+      } else {
+        log(`❌ ${JSON.stringify(d)}`, 'error');
+      }
+    } catch (e) {
+      log(`❌ ${e.message}`, 'error');
+    }
+  }
+
+  checkHealth();
+</script>
+</body>
+</html>
