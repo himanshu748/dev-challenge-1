@@ -6,12 +6,14 @@ Run: uvicorn main:app --reload
 import os
 import json
 import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
-import asyncio
+
+load_dotenv()
 
 app = FastAPI(title="AutoPM")
 app.mount("/static", StaticFiles(directory="static"), name="static")

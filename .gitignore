@@ -26,4 +26,4 @@ dist/
 build/
 
 # Local tooling
-.playwright-mcp/
+.playwright-mcp*/
