@@ -1,9 +1,29 @@
-__pycache__/
-*.pyc
-.env
+# Dependencies
+node_modules/
 venv/
 .venv/
 *.egg-info/
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
 dist/
 build/
+
+# Local tooling
 .playwright-mcp/
