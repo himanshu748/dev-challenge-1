@@ -8,7 +8,7 @@ Architecture:
   FastAPI backend             →  orchestrates both
 """
 
-import os, json, asyncio
+import os, json, asyncio, logging
 from datetime import date
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -18,8 +18,11 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 from huggingface_hub import InferenceClient
+import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+log = logging.getLogger("autopm")
 
 load_dotenv()
 
@@ -32,7 +35,40 @@ app = FastAPI(title="AutoPM")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-# ─── Notion MCP Client ───────────────────────────────────────────────────────
+# ─── Notion transport layer (MCP primary, httpx fallback) ────────────────────
+
+NOTION_API = "https://api.notion.com/v1"
+NOTION_VER = "2022-06-28"
+
+
+class NotionHTTPFallback:
+    """Direct Notion REST client — used when MCP stdio is unavailable (e.g. Vercel)."""
+
+    def _h(self):
+        return {"Authorization": f"Bearer {NOTION_TOKEN}",
+                "Notion-Version": NOTION_VER, "Content-Type": "application/json"}
+
+    async def call_tool(self, tool: str, args: dict) -> dict:
+        async with httpx.AsyncClient(timeout=30) as c:
+            if tool == "API-post-page":
+                r = await c.post(f"{NOTION_API}/pages", headers=self._h(), json=args)
+            elif tool == "API-post-search":
+                r = await c.post(f"{NOTION_API}/search", headers=self._h(), json=args)
+            elif tool == "API-get-block-children":
+                bid = args.pop("block_id")
+                r = await c.get(f"{NOTION_API}/blocks/{bid}/children", headers=self._h(), params=args)
+            elif tool == "API-get-self":
+                r = await c.get(f"{NOTION_API}/users/me", headers=self._h())
+            elif tool == "API-patch-page":
+                pid = args.pop("page_id")
+                r = await c.patch(f"{NOTION_API}/pages/{pid}", headers=self._h(), json=args)
+            elif tool == "API-retrieve-a-page":
+                pid = args.pop("page_id")
+                r = await c.get(f"{NOTION_API}/pages/{pid}", headers=self._h())
+            else:
+                return {"error": f"Unknown tool: {tool}"}
+            return r.json()
+
 
 @asynccontextmanager
 async def notion_mcp():
@@ -48,7 +84,20 @@ async def notion_mcp():
             yield session
 
 
-async def mcp_call(session: ClientSession, tool: str, args: dict) -> dict:
+@asynccontextmanager
+async def notion_session():
+    """MCP when available, httpx fallback otherwise."""
+    try:
+        async with notion_session() as mcp:
+            yield mcp
+    except Exception as e:
+        log.warning(f"MCP unavailable ({e}), using HTTP fallback")
+        yield NotionHTTPFallback()
+
+
+async def mcp_call(session, tool: str, args: dict) -> dict:
+    if isinstance(session, NotionHTTPFallback):
+        return await session.call_tool(tool, args)
     result = await session.call_tool(tool, args)
     text = result.content[0].text if result.content else "{}"
     return json.loads(text)
@@ -210,7 +259,7 @@ async def generate_prd_route(req: PRDRequest):
     raw = await generate_text(PRD_SYSTEM, f"Product idea: {req.idea}")
     prd = _parse_json(raw)
 
-    async with notion_mcp() as mcp:
+    async with notion_session() as mcp:
         prd_page = await mcp_create_page(mcp, parent_id, prd.get("title", "PRD"),
                                          build_prd_blocks(prd))
         task_page = await mcp_create_page(mcp, parent_id,
@@ -237,7 +286,7 @@ async def generate_standup(req: StandupRequest):
     parent_id = req.parent_page_id or NOTION_PARENT_PAGE_ID
     today = req.date or str(date.today())
 
-    async with notion_mcp() as mcp:
+    async with notion_session() as mcp:
         # READ from Notion via MCP — get workspace context
         pages = await mcp_search(mcp, "")
         titles = []
@@ -289,7 +338,7 @@ async def plan_sprint(req: SprintRequest):
         raise HTTPException(status_code=500, detail="NOTION_TOKEN not set")
     parent_id = req.parent_page_id or NOTION_PARENT_PAGE_ID
 
-    async with notion_mcp() as mcp:
+    async with notion_session() as mcp:
         # READ backlog from Notion via MCP
         pages = await mcp_search(mcp, "Tasks")
         task_ctx = []
@@ -342,7 +391,7 @@ Sprint number: {req.sprint_num}"""
 async def health():
     mcp_ok = False
     try:
-        async with notion_mcp() as mcp:
+        async with notion_session() as mcp:
             me = await mcp_call(mcp, "API-get-self", {})
             mcp_ok = bool(me.get("id"))
     except Exception:
