@@ -361,7 +361,7 @@
     <div class="logo-badge">🤖</div>
     <div class="logo-text">
       <h1>AutoPM</h1>
-      <span>AI Product Manager × Notion MCP</span>
+      <span>AI Product Manager × HuggingFace + Notion MCP</span>
     </div>
     <div class="status-dot" id="statusBadge">
       <div class="dot" id="statusDot"></div>
@@ -431,7 +431,7 @@
     try {
       const r = await fetch('/api/health');
       const d = await r.json();
-      const ok = d.anthropic_key && d.notion_token;
+      const ok = d.hf_key && d.notion_token;
       document.getElementById('statusDot').className = 'dot' + (ok ? ' ok' : '');
       document.getElementById('statusText').textContent = ok ? 'connected' : 'missing env vars';
       if (d.parent_page_id) {
@@ -489,7 +489,7 @@
 
     setLoading('generateBtn', 'generateSpinner', 'generateLabel', true, '🚀 Generate PRD + Tasks');
     log(`🧠 Analyzing: "${idea.slice(0, 60)}..."`, 'info');
-    log('<span class="thinking">🤖 Claude is building your PRD, task database, and Sprint 1 plan in Notion...</span>', 'info');
+    log('<span class="thinking">🤖 AI is building your PRD, task database, and Sprint 1 plan in Notion...</span>', 'info');
 
     try {
       const r = await fetch('/api/generate-prd', {

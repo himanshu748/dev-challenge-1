@@ -1,120 +1,101 @@
-# 🚀 GSoC Command Center
+# AutoPM — AI Product Manager
 
-> AI-powered GSoC contribution tracker & weekly planner — built with **Notion MCP** + **React** + **FastAPI**
+> AI-powered product management assistant that creates PRDs, task databases, standups, and sprint plans directly in Notion — built with **HuggingFace MCPClient** + **Notion MCP**.
 
 Built for the [dev.to Notion MCP Challenge](https://dev.to/challenges/notion-2026-03-04).
 
 ![Dashboard Screenshot](./screenshots/dashboard.png)
 
-## ✨ Features
+## Features
 
-### 📁 Projects Database
-Track your GSoC target organizations with fields for Status, Priority, Difficulty, Tags, and more.
+### PRD Generator
+Enter a product idea and AutoPM creates a complete PM workspace in Notion:
+- **PRD page** with Problem Statement, Goals, User Personas, User Stories, and Out of Scope
+- **Epics & Tasks database** with 3+ Epics, 10+ Stories, and 15+ Tasks (with Priority, Story Points, Status)
+- **Sprint 1 plan** picking the highest-priority stories totaling ~20 story points
 
-### 🔄 Sync from GitHub
-One click to fetch issues & PRs from your target repos. The system:
-- Fetches issues/PRs from configured GitHub repositories
-- Upserts them into a Notion Tasks database (no duplicates)
-- Links each task to its parent Project via relations
-- Updates status when PRs are merged or issues are closed
+### Daily Standup
+Reads task statuses from your Notion database and auto-generates a standup page with:
+- Completed yesterday
+- In progress today
+- Blockers
+- Sprint health metrics
 
-### 🧠 Plan my Week
-AI-powered weekly planning that:
-- Reads open Tasks from Notion
-- Checks your availability for the next 7 days
-- Schedules tasks by priority and due date
-- Creates a Weekly Plan with a natural-language summary
-- Shows utilization metrics (e.g., "88% of available hours planned")
+### Sprint Planner
+Pulls backlog items from Notion, selects ~20 story points of high-priority work, and creates a sprint plan page.
 
-### 📊 Dashboard
-React-based dashboard with:
-- Real-time stats (projects, open tasks, merged PRs, available hours)
-- Projects grid with priority-colored borders and status badges
-- Tasks table with type/status badges and GitHub links
-- Weekly Plan with AI-generated schedule summary
-- Availability calendar view
-
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  React Frontend │────▶│  FastAPI Backend  │────▶│   Notion MCP    │
-│  (Vite + React) │     │  (Python)         │     │   (Databases)   │
-└─────────────────┘     └────────┬─────────┘     └─────────────────┘
+┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
+│  Browser (UI)   │────▶│  FastAPI Backend      │────▶│  Notion API     │
+│  Vanilla HTML   │     │  (Python)             │     │  (REST v2025)   │
+└─────────────────┘     └────────┬─────────────┘     └─────────────────┘
                                  │
                                  ▼
                         ┌──────────────────┐
-                        │   GitHub API     │
-                        │   (PyGithub)     │
+                        │  HuggingFace     │
+                        │  Inference API   │
                         └──────────────────┘
 ```
 
-**4 Notion Databases:**
-- 📁 Projects — GSoC organizations and repos
-- ✅ Tasks — Issues/PRs synced from GitHub (related to Projects)
-- 📅 Weekly Plans — AI-generated schedules (related to Tasks)
-- ⏰ Availability — Hours available per day
+**How it works:** HuggingFace generates structured PRD content as JSON, then the backend writes it directly to Notion using the REST API with proper block formatting (headings, paragraphs, bullet lists).
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
-- Python 3.9+
-- Node.js 18+
+- Python 3.11+
+- Node.js 18+ (for the Notion MCP server via `npx`)
 - A [Notion Integration](https://www.notion.so/my-integrations) with API key
-- A [GitHub Personal Access Token](https://github.com/settings/tokens)
+- A [HuggingFace API Token](https://huggingface.co/settings/tokens)
 
-### 1. Clone the repo
-```bash
-git clone https://github.com/YOUR_USERNAME/gsoc-command-center.git
-cd gsoc-command-center
-```
+### Setup
 
-### 2. Backend Setup
 ```bash
-cd backend
+# 1. Clone and install
+git clone <your-repo-url>
+cd autopm
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+
+# 2. Configure environment
 cp .env.example .env
-# Edit .env with your Notion API key, GitHub token, and root page ID
-uvicorn app.main:app --reload --port 8000
+# Edit .env with your HuggingFace and Notion keys
+
+# 3. Run
+uvicorn main:app --reload
 ```
 
-### 3. Frontend Setup
-```bash
-cd frontend/frontend-app
-npm install
-npm run dev
-```
+Open [http://localhost:8000](http://localhost:8000) in your browser.
 
-### 4. Initialize Notion Schema
-Open `http://localhost:5173` and click **Setup** (or `POST /api/setup`) to create all 4 databases and seed sample data.
+## Environment Variables
 
-### 5. Start Using
-- **Sync from GitHub** — Pulls issues/PRs into Notion
-- **Plan my Week** — Generates an AI-powered weekly schedule
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `HF_API_KEY` | Yes | HuggingFace API token |
+| `NOTION_TOKEN` | Yes | Notion integration token |
+| `NOTION_PARENT_PAGE_ID` | Yes | Notion page ID where workspace is created |
+| `HF_MODEL` | No | Model ID (default: `Qwen/Qwen2.5-72B-Instruct`) |
 
-## 📡 API Endpoints
+## API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/setup` | Create Notion databases & seed data |
-| POST | `/api/sync` | Sync GitHub issues/PRs to Notion |
-| POST | `/api/plan` | Generate weekly plan |
-| GET | `/api/projects` | List all projects |
-| GET | `/api/tasks` | List all tasks |
-| GET | `/api/weekly-plans` | List weekly plans |
-| GET | `/api/availability` | List availability |
-| GET | `/api/status` | Health check |
+| GET | `/` | Dashboard UI |
+| GET | `/api/health` | Health check |
+| POST | `/api/generate-prd` | Generate PRD + tasks + sprint plan |
+| POST | `/api/standup` | Generate daily standup page |
+| POST | `/api/plan-sprint` | Plan next sprint from backlog |
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-- **Frontend:** React 19 + Vite 7 (vanilla CSS with glassmorphism dark theme)
-- **Backend:** FastAPI + Python 3.9
-- **Data Layer:** Notion SDK (`notion-client`)
-- **GitHub:** PyGithub
-- **MCP:** Notion MCP (`@notionhq/notion-mcp-server`)
+- **Frontend:** Vanilla HTML/CSS/JS with glassmorphism dark theme
+- **Backend:** FastAPI + Python
+- **AI:** HuggingFace Inference API (`huggingface_hub` InferenceClient)
+- **Data:** Notion REST API (`httpx`) for page/database writes
+- **Model:** Qwen/Qwen2.5-72B-Instruct (configurable)
 
-## 📝 License
+## License
 
 MIT
