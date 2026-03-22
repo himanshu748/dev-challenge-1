@@ -84,15 +84,7 @@ async def notion_mcp():
             yield session
 
 
-@asynccontextmanager
-async def notion_session():
-    """MCP when available, httpx fallback otherwise."""
-    try:
-        async with notion_session() as mcp:
-            yield mcp
-    except Exception as e:
-        log.warning(f"MCP unavailable ({e}), using HTTP fallback")
-        yield NotionHTTPFallback()
+notion_session = notion_mcp
 
 
 async def mcp_call(session, tool: str, args: dict) -> dict:
