@@ -27,3 +27,4 @@ build/
 
 # Local tooling
 .playwright-mcp*/
+.vercel

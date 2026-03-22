@@ -3,15 +3,14 @@ AutoPM — AI Product Manager powered by HuggingFace + Notion MCP
 Run: uvicorn main:app --reload
 
 Architecture:
-  HuggingFace Inference API (content generation)
-    +  Notion API (direct page/database creation)
-    +  MCP Client (stdio → npx @notionhq/notion-mcp-server) for read ops
+  HuggingFace Inference API  →  structured content generation
+  Notion MCP (stdio server)  →  ALL Notion reads & writes via MCP protocol
+  FastAPI backend             →  orchestrates both
 """
 
-import os
-import json
-import httpx
+import os, json, asyncio
 from datetime import date
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -19,89 +18,106 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 from huggingface_hub import InferenceClient
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 load_dotenv()
-
-app = FastAPI(title="AutoPM")
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 HF_API_KEY = os.environ.get("HF_API_KEY", "")
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
 NOTION_PARENT_PAGE_ID = os.environ.get("NOTION_PARENT_PAGE_ID", "")
 HF_MODEL = os.environ.get("HF_MODEL", "Qwen/Qwen2.5-72B-Instruct")
-NOTION_API = "https://api.notion.com/v1"
-NOTION_VERSION = "2022-06-28"
+
+app = FastAPI(title="AutoPM")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-# ─── Notion helpers ───────────────────────────────────────────────────────────
+# ─── Notion MCP Client ───────────────────────────────────────────────────────
 
-def _notion_headers():
-    return {
-        "Authorization": f"Bearer {NOTION_TOKEN}",
-        "Notion-Version": NOTION_VERSION,
-        "Content-Type": "application/json",
-    }
+@asynccontextmanager
+async def notion_mcp():
+    """Spin up Notion MCP stdio server and yield a ClientSession."""
+    params = StdioServerParameters(
+        command="npx",
+        args=["-y", "@notionhq/notion-mcp-server"],
+        env={**os.environ, "NOTION_TOKEN": NOTION_TOKEN},
+    )
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            yield session
 
 
-def _rich_text(content: str) -> list:
+async def mcp_call(session: ClientSession, tool: str, args: dict) -> dict:
+    result = await session.call_tool(tool, args)
+    text = result.content[0].text if result.content else "{}"
+    return json.loads(text)
+
+
+def _rt(content: str) -> list:
     return [{"text": {"content": content}}]
 
 
 def _heading(text: str, level: int = 2) -> dict:
-    key = f"heading_{level}"
-    return {"object": "block", "type": key, key: {"rich_text": _rich_text(text)}}
+    k = f"heading_{level}"
+    return {"object": "block", "type": k, k: {"rich_text": _rt(text)}}
 
 
-def _paragraph(text: str) -> dict:
-    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rich_text(text)}}
+def _para(text: str) -> dict:
+    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rt(text)}}
 
 
-def _bulleted(text: str) -> dict:
-    return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {"rich_text": _rich_text(text)}}
+def _bullet(text: str) -> dict:
+    return {"object": "block", "type": "bulleted_list_item",
+            "bulleted_list_item": {"rich_text": _rt(text)}}
 
 
-async def notion_create_page(parent_id: str, title: str, children: list) -> dict:
-    async with httpx.AsyncClient() as c:
-        payload = {
-            "parent": {"page_id": parent_id},
-            "properties": {"title": {"title": _rich_text(title)}},
-            "children": children[:100],
-        }
-        resp = await c.post(
-            f"{NOTION_API}/pages",
-            headers=_notion_headers(),
-            json=payload,
-            timeout=30,
-        )
-        if resp.status_code >= 400:
-            error_body = resp.json()
-            raise HTTPException(
-                status_code=502,
-                detail=f"Notion API error: {error_body.get('message', resp.text[:200])}",
-            )
-        return resp.json()
+async def mcp_create_page(session, parent_id: str, title: str, children: list) -> dict:
+    """Create a Notion page via MCP API-post-page tool."""
+    result = await mcp_call(session, "API-post-page", {
+        "parent": {"page_id": parent_id},
+        "properties": {"title": {"title": _rt(title)}},
+        "children": children[:100],
+    })
+    if result.get("status") and result["status"] >= 400:
+        raise HTTPException(status_code=502,
+            detail=f"Notion MCP error: {result.get('message', str(result)[:200])}")
+    return result
 
 
-# ─── HuggingFace helper ──────────────────────────────────────────────────────
+async def mcp_search(session, query: str = "") -> list:
+    result = await mcp_call(session, "API-post-search", {"query": query, "page_size": 50})
+    return result.get("results", [])
 
-def _hf_client() -> InferenceClient:
-    return InferenceClient(model=HF_MODEL, token=HF_API_KEY)
 
+async def mcp_get_children(session, block_id: str) -> list:
+    result = await mcp_call(session, "API-get-block-children",
+                            {"block_id": block_id, "page_size": 100})
+    return result.get("results", [])
+
+
+# ─── HuggingFace ─────────────────────────────────────────────────────────────
 
 async def generate_text(system: str, user_msg: str) -> str:
-    """Stream text from HuggingFace Inference API."""
-    hf = _hf_client()
+    hf = InferenceClient(model=HF_MODEL, token=HF_API_KEY)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user_msg}]
-    output = ""
+    out = ""
     for chunk in hf.chat_completion(messages=messages, max_tokens=4096, stream=True):
         if chunk.choices:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                output += delta.content
-    return output
+            d = chunk.choices[0].delta
+            if d.content:
+                out += d.content
+    return out
 
 
-# ─── PRD Generation ──────────────────────────────────────────────────────────
+def _parse_json(raw: str) -> dict:
+    s, e = raw.find("{"), raw.rfind("}") + 1
+    if s == -1 or e <= s:
+        raise HTTPException(status_code=502, detail="Model did not return valid JSON")
+    return json.loads(raw[s:e])
+
+
+# ─── Block builders ──────────────────────────────────────────────────────────
 
 PRD_SYSTEM = """You are AutoPM, an expert AI Product Manager.
 Given a product idea, generate a detailed PRD in this JSON format (no markdown fences):
@@ -123,49 +139,42 @@ Given a product idea, generate a detailed PRD in this JSON format (no markdown f
 Be thorough, specific, and actionable. At least 3 epics, 10 stories, 15 tasks."""
 
 
-async def build_prd_blocks(prd: dict) -> list:
-    """Convert structured PRD dict into Notion block children."""
-    blocks = []
-    blocks.append(_heading("Problem Statement"))
-    blocks.append(_paragraph(prd.get("problem", "")))
-
-    blocks.append(_heading("Goals & Success Metrics"))
+def build_prd_blocks(prd: dict) -> list:
+    b = []
+    b.append(_heading("Problem Statement"))
+    b.append(_para(prd.get("problem", "")))
+    b.append(_heading("Goals & Success Metrics"))
     for g in prd.get("goals", []):
-        blocks.append(_bulleted(g))
-
-    blocks.append(_heading("User Personas"))
+        b.append(_bullet(g))
+    b.append(_heading("User Personas"))
     for p in prd.get("personas", []):
-        blocks.append(_bulleted(f'{p.get("name", "")}: {p.get("description", "")}'))
-
-    blocks.append(_heading("User Stories"))
+        b.append(_bullet(f'{p.get("name","")}: {p.get("description","")}'))
+    b.append(_heading("User Stories"))
     for s in prd.get("user_stories", []):
-        blocks.append(_bulleted(s))
-
-    blocks.append(_heading("Out of Scope"))
+        b.append(_bullet(s))
+    b.append(_heading("Out of Scope"))
     for o in prd.get("out_of_scope", []):
-        blocks.append(_bulleted(o))
-
-    blocks.append(_heading("Sprint 1 Plan"))
-    blocks.append(_paragraph(prd.get("sprint1_goal", "")))
+        b.append(_bullet(o))
+    b.append(_heading("Sprint 1 Plan"))
+    b.append(_para(prd.get("sprint1_goal", "")))
     for s in prd.get("sprint1_stories", []):
-        blocks.append(_bulleted(s))
+        b.append(_bullet(s))
+    return b
 
-    return blocks
 
-
-async def build_task_blocks(prd: dict) -> list:
-    """Build a task breakdown page from epics/stories/tasks."""
-    blocks = []
+def build_task_blocks(prd: dict) -> list:
+    b = []
     for epic in prd.get("epics", []):
-        blocks.append(_heading(f'Epic: {epic.get("name", "")}'))
+        b.append(_heading(f'Epic: {epic.get("name","")}'))
         for story in epic.get("stories", []):
-            blocks.append(_heading(f'{story.get("name", "")} [{story.get("priority", "Med")}] ({story.get("points", 0)}pts)', level=3))
+            lbl = f'{story.get("name","")} [{story.get("priority","Med")}] ({story.get("points",0)}pts)'
+            b.append(_heading(lbl, level=3))
             for task in story.get("tasks", []):
-                blocks.append(_bulleted(task))
-    return blocks
+                b.append(_bullet(task))
+    return b
 
 
-# ─── Request Models ───────────────────────────────────────────────────────────
+# ─── Models ───────────────────────────────────────────────────────────────────
 
 class PRDRequest(BaseModel):
     idea: str
@@ -190,29 +199,23 @@ async def root():
 
 @app.post("/api/generate-prd")
 async def generate_prd_route(req: PRDRequest):
-    """Generate PRD content via HuggingFace, then write to Notion pages."""
     if not HF_API_KEY:
         raise HTTPException(status_code=500, detail="HF_API_KEY not set")
     if not NOTION_TOKEN:
         raise HTTPException(status_code=500, detail="NOTION_TOKEN not set")
-
     parent_id = req.parent_page_id or NOTION_PARENT_PAGE_ID
     if not parent_id:
         raise HTTPException(status_code=400, detail="parent_page_id required")
 
     raw = await generate_text(PRD_SYSTEM, f"Product idea: {req.idea}")
+    prd = _parse_json(raw)
 
-    start = raw.find("{")
-    end = raw.rfind("}") + 1
-    if start == -1 or end <= start:
-        raise HTTPException(status_code=502, detail="Model did not return valid JSON")
-    prd = json.loads(raw[start:end])
-
-    prd_blocks = await build_prd_blocks(prd)
-    prd_page = await notion_create_page(parent_id, prd.get("title", "PRD"), prd_blocks)
-
-    task_blocks = await build_task_blocks(prd)
-    task_page = await notion_create_page(parent_id, f'{prd.get("title", "PRD")} — Tasks', task_blocks)
+    async with notion_mcp() as mcp:
+        prd_page = await mcp_create_page(mcp, parent_id, prd.get("title", "PRD"),
+                                         build_prd_blocks(prd))
+        task_page = await mcp_create_page(mcp, parent_id,
+                                          f'{prd.get("title","PRD")} — Tasks',
+                                          build_task_blocks(prd))
 
     return {
         "status": "success",
@@ -220,62 +223,85 @@ async def generate_prd_route(req: PRDRequest):
         "tasks_url": task_page.get("url", ""),
         "epics": len(prd.get("epics", [])),
         "stories": sum(len(e.get("stories", [])) for e in prd.get("epics", [])),
-        "tasks": sum(len(s.get("tasks", [])) for e in prd.get("epics", []) for s in e.get("stories", [])),
+        "tasks": sum(len(s.get("tasks", [])) for e in prd.get("epics", [])
+                     for s in e.get("stories", [])),
     }
 
 
 @app.post("/api/standup")
 async def generate_standup(req: StandupRequest):
-    """Generate a daily standup summary page."""
     if not HF_API_KEY:
         raise HTTPException(status_code=500, detail="HF_API_KEY not set")
     if not NOTION_TOKEN:
         raise HTTPException(status_code=500, detail="NOTION_TOKEN not set")
-
     parent_id = req.parent_page_id or NOTION_PARENT_PAGE_ID
     today = req.date or str(date.today())
 
-    system = f"""You are AutoPM's standup agent. Generate a standup report in JSON:
+    async with notion_mcp() as mcp:
+        # READ from Notion via MCP — get workspace context
+        pages = await mcp_search(mcp, "")
+        titles = []
+        for p in pages[:20]:
+            for prop in p.get("properties", {}).values():
+                if prop.get("type") == "title":
+                    t = "".join(x.get("plain_text", "") for x in prop.get("title", []))
+                    if t:
+                        titles.append(t)
+        context = ", ".join(titles) if titles else "No existing pages"
+
+        system = f"""You are AutoPM's standup agent. Based on the workspace context, generate a standup in JSON:
 {{
   "completed": ["task1", "task2"],
   "in_progress": ["task3"],
   "blockers": ["blocker1"],
   "health": "On track — 60% done, velocity 18pts/sprint"
 }}
+Workspace pages: {context}
 Today: {today}"""
 
-    raw = await generate_text(system, f"Generate standup for {today}")
-    start, end = raw.find("{"), raw.rfind("}") + 1
-    data = json.loads(raw[start:end]) if start != -1 and end > start else {}
+        raw = await generate_text(system, f"Generate standup for {today}")
+        data = _parse_json(raw)
 
-    blocks = [_heading(f"Daily Standup — {today}")]
-    blocks.append(_heading("Completed Yesterday", 3))
-    for item in data.get("completed", []):
-        blocks.append(_bulleted(item))
-    blocks.append(_heading("In Progress Today", 3))
-    for item in data.get("in_progress", []):
-        blocks.append(_bulleted(item))
-    blocks.append(_heading("Blockers", 3))
-    for item in data.get("blockers", []):
-        blocks.append(_bulleted(item))
-    blocks.append(_heading("Sprint Health", 3))
-    blocks.append(_paragraph(data.get("health", "No data")))
+        blocks = [_heading(f"Daily Standup — {today}")]
+        blocks.append(_heading("Completed Yesterday", 3))
+        for item in data.get("completed", []):
+            blocks.append(_bullet(item))
+        blocks.append(_heading("In Progress Today", 3))
+        for item in data.get("in_progress", []):
+            blocks.append(_bullet(item))
+        blocks.append(_heading("Blockers", 3))
+        for item in data.get("blockers", []):
+            blocks.append(_bullet(item))
+        blocks.append(_heading("Sprint Health", 3))
+        blocks.append(_para(data.get("health", "No data")))
 
-    page = await notion_create_page(parent_id, f"Standup — {today}", blocks)
+        # WRITE to Notion via MCP
+        page = await mcp_create_page(mcp, parent_id, f"Standup — {today}", blocks)
+
     return {"status": "success", "standup_url": page.get("url", ""), **data}
 
 
 @app.post("/api/plan-sprint")
 async def plan_sprint(req: SprintRequest):
-    """Generate a sprint plan page."""
     if not HF_API_KEY:
         raise HTTPException(status_code=500, detail="HF_API_KEY not set")
     if not NOTION_TOKEN:
         raise HTTPException(status_code=500, detail="NOTION_TOKEN not set")
-
     parent_id = req.parent_page_id or NOTION_PARENT_PAGE_ID
 
-    system = f"""You are AutoPM's sprint planner. Generate a sprint plan in JSON:
+    async with notion_mcp() as mcp:
+        # READ backlog from Notion via MCP
+        pages = await mcp_search(mcp, "Tasks")
+        task_ctx = []
+        for p in pages[:5]:
+            for prop in p.get("properties", {}).values():
+                if prop.get("type") == "title":
+                    t = "".join(x.get("plain_text", "") for x in prop.get("title", []))
+                    if t:
+                        task_ctx.append(t)
+        backlog = ", ".join(task_ctx) if task_ctx else "No existing task pages"
+
+        system = f"""You are AutoPM's sprint planner. Based on backlog context, generate a sprint plan in JSON:
 {{
   "goal": "Sprint goal statement",
   "stories": [{{"name": "...", "points": 3, "priority": "High"}}],
@@ -283,24 +309,27 @@ async def plan_sprint(req: SprintRequest):
   "capacity": "Assuming 2 developers, 10 working days",
   "definition_of_done": "All stories reviewed, tested, deployed"
 }}
+Existing task pages: {backlog}
 Sprint number: {req.sprint_num}"""
 
-    raw = await generate_text(system, f"Plan sprint {req.sprint_num}")
-    start, end = raw.find("{"), raw.rfind("}") + 1
-    data = json.loads(raw[start:end]) if start != -1 and end > start else {}
+        raw = await generate_text(system, f"Plan sprint {req.sprint_num}")
+        data = _parse_json(raw)
 
-    blocks = [_heading(f"Sprint {req.sprint_num} Plan")]
-    blocks.append(_heading("Sprint Goal", 3))
-    blocks.append(_paragraph(data.get("goal", "")))
-    blocks.append(_heading("Selected Stories", 3))
-    for s in data.get("stories", []):
-        blocks.append(_bulleted(f'{s.get("name", "")} — {s.get("points", 0)}pts [{s.get("priority", "")}]'))
-    blocks.append(_heading("Capacity", 3))
-    blocks.append(_paragraph(data.get("capacity", "")))
-    blocks.append(_heading("Definition of Done", 3))
-    blocks.append(_paragraph(data.get("definition_of_done", "")))
+        blocks = [_heading(f"Sprint {req.sprint_num} Plan")]
+        blocks.append(_heading("Sprint Goal", 3))
+        blocks.append(_para(data.get("goal", "")))
+        blocks.append(_heading("Selected Stories", 3))
+        for s in data.get("stories", []):
+            blocks.append(_bullet(
+                f'{s.get("name","")} — {s.get("points",0)}pts [{s.get("priority","")}]'))
+        blocks.append(_heading("Capacity", 3))
+        blocks.append(_para(data.get("capacity", "")))
+        blocks.append(_heading("Definition of Done", 3))
+        blocks.append(_para(data.get("definition_of_done", "")))
 
-    page = await notion_create_page(parent_id, f"Sprint {req.sprint_num} Plan", blocks)
+        # WRITE to Notion via MCP
+        page = await mcp_create_page(mcp, parent_id, f"Sprint {req.sprint_num} Plan", blocks)
+
     return {
         "status": "success",
         "sprint_url": page.get("url", ""),
@@ -311,9 +340,17 @@ Sprint number: {req.sprint_num}"""
 
 @app.get("/api/health")
 async def health():
+    mcp_ok = False
+    try:
+        async with notion_mcp() as mcp:
+            me = await mcp_call(mcp, "API-get-self", {})
+            mcp_ok = bool(me.get("id"))
+    except Exception:
+        pass
     return {
         "status": "ok",
         "hf_key": bool(HF_API_KEY),
         "notion_token": bool(NOTION_TOKEN),
         "parent_page_id": bool(NOTION_PARENT_PAGE_ID),
+        "mcp_connected": mcp_ok,
     }

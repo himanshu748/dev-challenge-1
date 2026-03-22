@@ -378,11 +378,16 @@
       placeholder="Describe your product idea... e.g. 'A mobile app that helps remote teams track async video updates like Loom but with AI summaries and Notion sync'"
     ></textarea>
     <div class="input-row">
-      <input
-        class="page-input"
-        id="pageIdInput"
-        placeholder="Notion Parent Page ID (or set env NOTION_PARENT_PAGE_ID)"
-      />
+      <div style="flex:1;position:relative">
+        <input
+          class="page-input"
+          id="pageIdInput"
+          type="password"
+          placeholder="Notion Parent Page ID (or set env NOTION_PARENT_PAGE_ID)"
+          style="width:100%;padding-right:40px"
+        />
+        <button onclick="togglePageId()" id="toggleEye" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted);padding:4px" title="Show/Hide">👁</button>
+      </div>
       <button class="btn btn-primary" id="generateBtn" onclick="generatePRD()">
         <span id="generateLabel">🚀 Generate PRD + Tasks</span>
         <div class="spinner" id="generateSpinner"></div>
@@ -425,6 +430,12 @@
 <script>
   const API = '';
   let sprintNum = 1;
+
+  function togglePageId() {
+    const inp = document.getElementById('pageIdInput');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+    document.getElementById('toggleEye').textContent = inp.type === 'password' ? '👁' : '🙈';
+  }
 
   // ── Health check ──────────────────────────────────────────────────────────
   async function checkHealth() {
@@ -501,22 +512,19 @@
 
       if (d.status === 'success') {
         log('✅ PRD created in Notion!', 'success');
-        log('✅ Epics & Tasks database populated!', 'success');
-        log('✅ Sprint 1 plan created!', 'success');
+        log('✅ Epics & Tasks breakdown populated!', 'success');
 
-        const s = d.summary || {};
         showResults([
-          [s.epics ?? '3+', 'Epics'],
-          [s.stories ?? '10+', 'Stories'],
-          [s.tasks ?? '15+', 'Tasks'],
+          [d.epics ?? '3+', 'Epics'],
+          [d.stories ?? '10+', 'Stories'],
+          [d.tasks ?? '15+', 'Tasks'],
         ]);
         showLinks([
-          ['PRD Document', s.prd_url],
-          ['Task Database', s.database_url],
-          ['Sprint 1 Plan', s.sprint_url],
+          ['PRD Document', d.prd_url],
+          ['Task Breakdown', d.tasks_url],
         ]);
       } else {
-        log(`❌ Error: ${JSON.stringify(d)}`, 'error');
+        log(`❌ Error: ${d.detail || JSON.stringify(d)}`, 'error');
       }
     } catch (e) {
       log(`❌ Request failed: ${e.message}`, 'error');
@@ -539,11 +547,12 @@
       });
       const d = await r.json();
       if (d.status === 'success') {
-        const s = d.summary || {};
-        log(`✅ Standup created! ${s.in_progress ?? '?'} in-progress, ${s.blockers ?? '0'} blockers`, 'success');
-        showLinks([['Today\'s Standup', s.standup_url]]);
+        const ip = Array.isArray(d.in_progress) ? d.in_progress.length : (d.in_progress ?? '?');
+        const bl = Array.isArray(d.blockers) ? d.blockers.length : (d.blockers ?? '0');
+        log(`✅ Standup created! ${ip} in-progress, ${bl} blockers`, 'success');
+        showLinks([['Today\'s Standup', d.standup_url]]);
       } else {
-        log(`❌ ${JSON.stringify(d)}`, 'error');
+        log(`❌ ${d.detail || JSON.stringify(d)}`, 'error');
       }
     } catch (e) {
       log(`❌ ${e.message}`, 'error');
@@ -564,12 +573,11 @@
       });
       const d = await r.json();
       if (d.status === 'success') {
-        const s = d.summary || {};
-        log(`✅ Sprint ${sprintNum} planned! ${s.task_count ?? '?'} tasks · ${s.total_points ?? '?'} points`, 'success');
-        showLinks([[`Sprint ${sprintNum} Plan`, s.sprint_url]]);
+        log(`✅ Sprint ${sprintNum} planned! ${d.task_count ?? '?'} stories · ${d.total_points ?? '?'} points`, 'success');
+        showLinks([[`Sprint ${sprintNum} Plan`, d.sprint_url]]);
         sprintNum++;
       } else {
-        log(`❌ ${JSON.stringify(d)}`, 'error');
+        log(`❌ ${d.detail || JSON.stringify(d)}`, 'error');
       }
     } catch (e) {
       log(`❌ ${e.message}`, 'error');
